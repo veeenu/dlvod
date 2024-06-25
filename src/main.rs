@@ -11,6 +11,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use dialoguer::Select;
 use serde_json::Value;
 
 fn slug(s: &str) -> String {
@@ -284,30 +285,16 @@ async fn main() -> Result<()> {
     runs.extend(get_pending_runs("nd28z0ed").await?);
     runs.extend(get_pending_runs("k6qg0xdg").await?);
 
-    for (idx, run) in runs.iter().enumerate() {
-        println!("{:>3}. {run}", idx + 1);
+    let choices = runs.iter().map(|run| run.to_string()).collect::<Vec<_>>();
+    let choice = Select::new()
+        .with_prompt("Choose a run")
+        .default(0)
+        .items(&choices[..])
+        .interact_opt()?;
+
+    if let Some(choice) = choice {
+        download_run(&runs[choice], &done).await?;
     }
-
-    print!("\nChoose a run: ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("Failed to read line")?;
-
-    let number: usize = input
-        .trim()
-        .parse::<usize>()
-        .context("Please enter a valid integer")?
-        .checked_sub(1)
-        .ok_or_else(|| anyhow!("Please enter a valid run number"))?;
-
-    if number >= runs.len() {
-        bail!("Please enter a valid run number")
-    };
-
-    download_run(&runs[number], &done).await?;
 
     Ok(())
 }
