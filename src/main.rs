@@ -3,7 +3,7 @@ use std::{
     io::{self, BufRead, BufReader, Read, Write},
     process::{exit, Child, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     thread,
@@ -11,6 +11,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use bytesize::ByteSize;
 use dialoguer::Select;
 use serde_json::Value;
 
@@ -152,7 +153,7 @@ async fn get_pending_runs(game: &str) -> Result<Vec<Run>> {
 async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
     let filename = run.filename();
 
-    println!("\nDownloading {run}");
+    println!("URL: {}", run.vod_uri);
 
     let mut yt_dlp_cmd = Command::new("yt-dlp");
     yt_dlp_cmd
@@ -161,6 +162,8 @@ async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
         .stderr(Stdio::piped())
         .args([
             &run.vod_uri,
+            "--downloader",
+            "aria2c",
             "-N",
             "8",
             "--progress",
@@ -224,19 +227,26 @@ async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
     let yt_dlp_stderr = yt_dlp_child.stderr.take().unwrap();
     let mut ffmpeg_stdin = ffmpeg_child.stdin.take().unwrap();
 
-    let stderr_thread = thread::spawn(move || {
-        let mut buf = String::new();
-        let mut reader = BufReader::new(yt_dlp_stderr);
+    let bytes_read_total = Arc::new(AtomicUsize::new(0));
 
-        loop {
-            buf.clear();
-            match reader.read_line(&mut buf) {
-                Ok(c) if c > 0 => c,
-                _ => break,
-            };
+    let stderr_thread = thread::spawn({
+        let bytes_read_total = Arc::clone(&bytes_read_total);
+        move || {
+            let mut buf = String::new();
+            let mut reader = BufReader::new(yt_dlp_stderr);
 
-            print!("\r\x1b[2K\r{}", buf.trim_end());
-            io::stdout().flush().unwrap();
+            loop {
+                buf.clear();
+                match reader.read_line(&mut buf) {
+                    Ok(c) if c > 0 => c,
+                    _ => break,
+                };
+
+                let bytes_read = bytes_read_total.load(Ordering::SeqCst) as u64;
+
+                print!("\r\x1b[2K\r{} ({})", buf.trim_end(), ByteSize(bytes_read),);
+                io::stdout().flush().unwrap();
+            }
         }
     });
 
@@ -250,6 +260,8 @@ async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
         ffmpeg_stdin
             .write(&buf[0..bytes_read])
             .context("Couldn't write to ffmpeg")?;
+
+        bytes_read_total.fetch_add(bytes_read, Ordering::SeqCst);
 
         if bytes_read == 0 || done.load(Ordering::SeqCst) {
             drop(yt_dlp_stdout);
