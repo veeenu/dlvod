@@ -127,22 +127,18 @@ async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
     println!("URL: {}", run.vod_uri);
 
     let mut yt_dlp_cmd = Command::new("yt-dlp");
-    yt_dlp_cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .args([
-            &run.vod_uri,
-            "--downloader",
-            "aria2c",
-            "-N",
-            "8",
-            "--progress",
-            "--newline",
-            "-q",
-            "-o",
-            "-",
-        ]);
+    yt_dlp_cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).args([
+        &run.vod_uri,
+        "--downloader",
+        "aria2c",
+        "-N",
+        "8",
+        "--progress",
+        "--newline",
+        "-q",
+        "-o",
+        "-",
+    ]);
 
     #[cfg(not(target_os = "macos"))]
     let ffmpeg_args = [
@@ -150,11 +146,12 @@ async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
         "-i",
         "pipe:",
         "-c:v",
-        "h264_nvenc",
-        "-x264-params",
+        "libx265",
+        // "h264_nvenc",
+        "-x265-params",
         "keyint=30:min-keyint=30:no-scenecut=1",
         "-filter:v",
-        "fps=30, scale=896:-1",
+        "fps=30, scale=720:-1",
         "-c:a",
         "aac",
         "-b:a",
