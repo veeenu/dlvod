@@ -256,16 +256,13 @@ async fn main() -> Result<()> {
     })?;
 
     let mut runs = Vec::new();
-    runs.extend(get_pending_runs("nd28z0ed").await?);
+    // runs.extend(get_pending_runs("nd28z0ed").await?);
     runs.extend(get_pending_runs("k6qg0xdg").await?);
     runs.extend(get_pending_runs("k6qp429d").await?);
 
     let choices = runs.iter().map(|run| run.to_string()).collect::<Vec<_>>();
-    let choice = Select::new()
-        .with_prompt("Choose a run")
-        .default(0)
-        .items(&choices[..])
-        .interact_opt()?;
+    let choice =
+        Select::new().with_prompt("Choose a run").default(0).items(&choices[..]).interact_opt()?;
 
     if let Some(choice) = choice {
         download_run(&runs[choice], &done).await?;
