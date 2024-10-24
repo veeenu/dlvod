@@ -1,14 +1,9 @@
-use std::{
-    fmt,
-    io::{self, BufRead, BufReader, Read, Write},
-    process::{exit, Child, Command, Stdio},
-    sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
-    },
-    thread,
-    time::Duration,
-};
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::process::{exit, Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use std::{fmt, thread};
 
 use anyhow::{anyhow, bail, Context, Result};
 use bytesize::ByteSize;
@@ -16,10 +11,7 @@ use dialoguer::Select;
 use serde_json::Value;
 
 fn slug(s: &str) -> String {
-    s.to_ascii_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
+    s.to_ascii_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).collect()
 }
 
 fn wait_cmd(child: &mut Child, done: &Arc<AtomicBool>) -> Result<()> {
@@ -62,14 +54,9 @@ impl TryFrom<&Value> for Run {
     type Error = anyhow::Error;
 
     fn try_from(value: &Value) -> Result<Self> {
-        let run_id = value["id"]
-            .as_str()
-            .context("Can't read run ID")?
-            .to_string();
-        let vod_uri = value["videos"]["links"][0]["uri"]
-            .as_str()
-            .context("Can't read VOD URI")?
-            .to_string();
+        let run_id = value["id"].as_str().context("Can't read run ID")?.to_string();
+        let vod_uri =
+            value["videos"]["links"][0]["uri"].as_str().context("Can't read VOD URI")?.to_string();
         let player = value["players"]["data"][0]["names"]["international"]
             .as_str()
             .context("Can't read player data")?
@@ -89,9 +76,7 @@ impl TryFrom<&Value> for Run {
         let cat = slug(&cat_full);
         let time = {
             let d = iso8601_duration::Duration::parse(
-                value["times"]["primary"]
-                    .as_str()
-                    .context("Couldn't read run time")?,
+                value["times"]["primary"].as_str().context("Couldn't read run time")?,
             )
             .map_err(|e| anyhow!("{e:?}"))
             .context("Couldn't parse run time")?
@@ -106,16 +91,7 @@ impl TryFrom<&Value> for Run {
             format!("{h:02}:{m:02}:{s:02}")
         };
 
-        Ok(Self {
-            run_id,
-            vod_uri,
-            player,
-            game,
-            game_name,
-            cat_full,
-            cat,
-            time,
-        })
+        Ok(Self { run_id, vod_uri, player, game, game_name, cat_full, cat, time })
     }
 }
 
@@ -142,12 +118,7 @@ async fn get_pending_runs(game: &str) -> Result<Vec<Run>> {
         .context("Reading run metadata")?;
 
     let runs: Value = serde_json::from_str(&body).context("Parsing run metadata")?;
-    runs["data"]
-        .as_array()
-        .context("Unexpected value")?
-        .iter()
-        .map(Run::try_from)
-        .collect()
+    runs["data"].as_array().context("Unexpected value")?.iter().map(Run::try_from).collect()
 }
 
 async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
@@ -253,13 +224,9 @@ async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
     let mut buf = [0u8; 4096];
 
     loop {
-        let bytes_read = yt_dlp_stdout
-            .read(&mut buf)
-            .context("Couldn't read from yt-dlp")?;
+        let bytes_read = yt_dlp_stdout.read(&mut buf).context("Couldn't read from yt-dlp")?;
 
-        ffmpeg_stdin
-            .write(&buf[0..bytes_read])
-            .context("Couldn't write to ffmpeg")?;
+        ffmpeg_stdin.write(&buf[0..bytes_read]).context("Couldn't write to ffmpeg")?;
 
         bytes_read_total.fetch_add(bytes_read, Ordering::SeqCst);
 
@@ -273,9 +240,7 @@ async fn download_run(run: &Run, done: &Arc<AtomicBool>) -> Result<()> {
 
     wait_cmd(&mut yt_dlp_child, done).context("yt-dlp process")?;
     wait_cmd(&mut ffmpeg_child, done).context("ffmpeg process")?;
-    stderr_thread
-        .join()
-        .map_err(|e| anyhow!("I/O error: {e:?}"))?;
+    stderr_thread.join().map_err(|e| anyhow!("I/O error: {e:?}"))?;
 
     Ok(())
 }
